@@ -1,4 +1,16 @@
 # Anatomy of a File Write
+Book says:
+If any datanode fails while data is being written to it, then the following actions are
+taken, which are transparent to the client writing the data. First, the pipeline is closed,
+and any packets in the ack queue are added to the front of the data queue so that
+datanodes that are downstream from the failed node will not miss any packets. The
+current block on the good datanodes is given a new identity, which is communicated to
+the namenode, so that the partial block on the failed datanode will be deleted if the failed
+datanode recovers later on. The failed datanode is removed from the pipeline, and a
+new pipeline is constructed from the two good datanodes. The remainder of the block’s
+data is written to the good datanodes in the pipeline. The namenode notices that the
+block is under-replicated, and it arranges for a further replica to be created on another
+node. Subsequent blocks are then treated as normal.
 ## Datanode Failure During File Writing
 
 If any datanode fails while data is being written to it, then the following actions are taken:
