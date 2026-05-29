@@ -1,0 +1,2 @@
+Configure JAVA_HOME and other necessary environment variables to avoid setting them repeatedly.
+Remember that the configuration files are located under the etc directory where you extracted the Hadoop files.

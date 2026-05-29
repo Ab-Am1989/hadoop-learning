@@ -42,7 +42,11 @@ etc/hadoop/hdfs-site.xml
 ## Prerequisites
 1. The document requires passwordless SSH access to the NameNode (*```
 localhost in this setup```*). Verify that ```ssh localhost``` works without a password prompt; otherwise, you may encounter errors while starting the cluster.
+If you asked for password you can add your key using following command:
 
+    ```console
+    ssh-add ~/.ssh/id_ed25519
+    ```
 2. Create the following directories if they are not already present.
     ```console
     /tmp/hadoop-abamini/dfs/data

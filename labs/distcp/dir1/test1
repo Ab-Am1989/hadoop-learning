@@ -1,0 +1,4 @@
+If you encounter log messages related to formatting issues...
+Ensure the following directories exist.
+The document requires passwordless SSH access to the NameNode (localhost in this setup). Verify that ssh localhost works without a password prompt; otherwise, you may encounter errors while starting the cluster.
+Cheeeeeeeeeeeeeert o pert
