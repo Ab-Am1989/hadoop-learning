@@ -25,15 +25,6 @@ spark-submit app.py
 
 **Flow:**
 
-<<<<<<< HEAD
-> Client
->  ↓
-> YARN
->  ↓
-> Spark Driver (ApplicationMaster)
->  ↓
-> Executors
-=======
 ```
  Client
   ↓
@@ -43,7 +34,6 @@ spark-submit app.py
   ↓
  Executors
 ```
->>>>>>> dd5cb14 (Yarn added and catogerized notes)
 
 **Executors need to:**
 
@@ -54,12 +44,7 @@ spark-submit app.py
 
 YARN only allocates machines and Spark provides:
 
-<<<<<<< HEAD
-> Driver ←→ Executor RPC
-> Executor ←→ Executor shuffle
-=======
 ```
  Driver ←→ Executor RPC
  Executor ←→ Executor shuffle
 ```
->>>>>>> dd5cb14 (Yarn added and catogerized notes)
