@@ -51,3 +51,7 @@ hadoop distcp hdfs:///src hdfs:///dst
     - sorting
 
 Each file can be copied independently. So DistCp uses **Maps only** and **No reducers are needed**.
+
+### Two different, important statements:
+1. A single file is never split across multiple maps.
+2. A single map may be assigned multiple files.
