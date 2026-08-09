@@ -217,16 +217,48 @@ RM2 becomes Active
 ```
 
 ## Per-ResourceManager Properties
+
+One ResourceManager JVM starts several servers, each listening on a different port and serving a different purpose.
+
+|         ResourceManager JVM          |
+|:------------------------------------:|
+|  RPC Server (8032)                   |
+|  Scheduler RPC Server (8030)         |
+|  ResourceTracker RPC Server (8031)   |
+|  Admin RPC Server (8033)             |
+|  Embedded HTTP Server (8088)         |
+
 ### RPC Addresses
 
 **Applications** and **NodeManagers** use it to communicate with the ResourceManager.
+
+Example:
+
+```
+yarn jar
+spark-submit
+MapReduce client
+```
+When you run Spark Application, the Spark client eventually sends RPCs here.
+
+```Bash
+spark-submit ...
+```
+Typical operations:
+
+- submit application
+- kill application
+- get application report
+- get cluster metrics
+
+The corresponding property is configured as follows:
+
 ```
 <property>
   <name>yarn.resourcemanager.address.rm1</name>
   <value>rm1:8032</value>
 </property>
 ```
-Completing ...
 
 ### Scheduler Address
 
