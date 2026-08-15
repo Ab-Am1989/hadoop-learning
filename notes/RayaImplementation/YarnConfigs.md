@@ -228,28 +228,122 @@ One ResourceManager JVM starts several servers, each listening on a different po
 |  Admin RPC Server (8033)             |
 |  Embedded HTTP Server (8088)         |
 
+### Hadoop RPC(Remote Procedure Call)
+
+Make calling a method on a remote machine look somewhat like calling a local method
+
+```
+                Machine A                         Machine B
+
+                Client                            CalculatorImpl
+                  |                                      |
+                  |                                      |
+                  +---------- network ------------------>+
+```
+
+The ResourceManager has an interface, which defines operations such as:
+
+```Java
+interface ApplicationClientProtocol {
+
+    SubmitApplicationResponse submitApplication(
+        SubmitApplicationRequest request
+    );
+
+    GetApplicationReportResponse getApplicationReport(
+        GetApplicationReportRequest request
+    );
+
+    KillApplicationResponse forceKillApplication(
+        KillApplicationRequest request
+    );
+}
+```
+
+The client might conceptually do:
+```Java
+client.submitApplication(request);
+```
+
+As the ResourceManager is on another machine, the RPC framework handles the networking part.
+
+```
+              Client machine                 RM machine
+
+              +----------------+             +----------------+
+              | YARN client    |             | ResourceManager|
+              |                |             |                |
+              | submitApp()    |             |                |
+              +-------+--------+             +--------+-------+
+                      |                               |
+                      |        Hadoop RPC             |
+                      +------------------------------>|
+                                                      |
+                                                submitApplication()
+```
+Hadoop gives the client a **proxy implementing** ‍‍‍```ApplicationClientProtocol```. The proxy is simply an object in the client's JVM. It implements the same interface: ```ApplicationClientProtocol```.
+
+The client does:
+```
+client.submitApplication(request);
+```
+
+The proxy intercepts that call. It creates an RPC request containing information conceptually like as follows which gets serialized into byte and send to ResourceManager.
+
+```
+method:
+    submitApplication
+
+request:
+    applicationId = ...
+    applicationName = ...
+    queue = ...
+    ...
+```
+
+The ResourceManager has an RPC server listening there.
+
+```
+Client JVM                         ResourceManager JVM
+
+            client.submitApplication() # Interface
+                   |
+                   v
+               RPC Proxy # Implements the Interface
+                   |
+                   | serialized request
+                   |
+                   +---------------------------->
+                                                :8032
+                                                  |
+                                              RPC Server
+                                                  |
+                                                  v
+                                     ApplicationClientProtocol
+                                          implementation
+                                                  |
+                                                  v
+                                          ResourceManager
+```
+
 ### RPC Addresses
 
-**Applications** and **NodeManagers** use it to communicate with the ResourceManager.
+**Applications** (yarn jar, spark-submit, MapReduce client) and **NodeManagers** use it to communicate with the ResourceManager.
 
-Example:
-
-```
-yarn jar
-spark-submit
-MapReduce client
-```
 When you run Spark Application, the Spark client eventually sends RPCs here.
 
 ```Bash
 spark-submit ...
 ```
-Typical operations:
+
+**Typical operations:**
 
 - submit application
 - kill application
 - get application report
 - get cluster metrics
+
+Internally, this endpoint implements the **ApplicationClientProtocol** (?) interface.
 
 The corresponding property is configured as follows:
 
@@ -262,7 +356,31 @@ The corresponding property is configured as follows:
 
 ### Scheduler Address
 
-This endpoint is used by the scheduler. Applications submit requests here.
+This endpoint is used by the scheduler. Once an application starts, its **ApplicationMaster** uses this endpoint to negotiate resources.
+
+Remember the lifecycle:
+
+```
+  Client
+
+      ↓
+
+  ResourceManager
+
+      ↓
+
+  Container allocated
+
+      ↓
+
+  ApplicationMaster starts
+```
+
+For example if ApplicationMaster needs 10 more containers, Those requests go to the Scheduler RPC server. Internally this endpoint implements **ApplicationMasterProtocol** (?).
+
+Keeping RPC and Scheduler separate simplifies authorization, scalability, and the protocol design.
+
+The corresponding property is configured as follows:
 
 ```
 <property>
@@ -271,10 +389,18 @@ This endpoint is used by the scheduler. Applications submit requests here.
 </property>
 ```
 
-Completing ...
-
 ### Resource Tracker Address
-NodeManagers connect here. Every heartbeat from every node goes to this address.
+
+This endpoint is used by the NodeManagers. Each NodeManager periodically sends heartbeats to this address, providing the ResourceManager with information about node health, available resources, and container status. Without these heartbeats, the ResourceManager would not know which nodes are alive, how much memory is available, or which containers have completed. A heartbeat contains information such as:
+
+- available memory
+- available CPUs
+- container status
+- node health
+
+Internally this endpoint implements **ResourceTracker**.
+
+The corresponding property is configured as follows:
 
 ```
 <property>
@@ -282,16 +408,21 @@ NodeManagers connect here. Every heartbeat from every node goes to this address.
   <value>rm1:8031</value>
 </property>
 ```
-Without this endpoint, the RM cannot know:
-
-- available memory
-- available CPUs
-- container status
-- node health
-
-Completing ...
 
 ### Admin Address
+
+Administrative commands connect here and uses this endpoint. For expamle:
+
+```console
+yarn rmadmin \
+    -refreshNodes
+
+yarn rmadmin \
+    -transitionToActive rm1
+```
+Internally it implements **ResourceManagerAdministrationProtocol**.
+
+The corresponding property is configured as follows:
 
 ```
 <property>
@@ -299,17 +430,11 @@ Completing ...
   <value>rm1:8033</value>
 </property>
 ```
-Administrative commands connect here. For expamle:
-
-```console
-yarn rmadmin
-```
-uses this endpoint.
-
-Completing ...
 
 ### Web UI(HTTP,HTTPS)
-This is the YARN web UI.
+
+This is different. It is an embedded HTTP server instead of RPC.
+
 Example:
 ```
 http://rm1:8088
@@ -321,6 +446,8 @@ It shows:
 - nodes
 - scheduler
 - metrics
+
+The corresponding propertied are configured as follows:
 
 ```
 <property>
