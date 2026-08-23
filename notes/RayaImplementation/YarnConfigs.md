@@ -59,7 +59,7 @@ In reality, the Standby RM is a **fully running ResourceManager** with one cruci
     - application attempts
     - completion status
 
-    If RM1 crashes without persisting this information, there is no way to recover it. To prevent this, Hadoop uses a ***ResourceManager State Store***.[^1] Whenever an application is submitted, accepted, or completed, or when containers are allocated, the Active ResourceManager persists enough metadata for another ResourceManager to recover its state. The Standby ResourceManager continuously reads this persisted state (or loads it when it starts). As a result, when the Standby becomes the Active ResourceManager, it can resume operation without starting from scratch.
+    If RM1 crashes without persisting this information, there is no way to recover it. To prevent this, Hadoop uses a ***ResourceManager State Store***[^1] Whenever an application is submitted, accepted, or completed, or when containers are allocated, the Active ResourceManager persists enough metadata for another ResourceManager to recover its state. The Standby ResourceManager continuously reads this persisted state (or loads it when it starts). As a result, when the Standby becomes the Active ResourceManager, it can resume operation without starting from scratch.
 4. Standby ResourceManager does not schedule resources only the Active RM is allowed to:
     - allocate containers
     - start containers
@@ -214,6 +214,19 @@ RM1 dies
 ZooKeeper detects failure
     ↓
 RM2 becomes Active
+```
+
+### ResourceManager Schedulare
+
+This property determines which scheduling algorithm is used to allocate containers. The available scheduling algorithms were discussed extensively in Chapter 3.
+
+The corresponding property is configured as follows:
+
+```
+<property>
+  <name>yarn.resourcemanager.scheduler.class</name>
+  <value>org.apache.hadoop.yarn.server.resourcemanager.scheduler.capacity.CapacityScheduler</value>
+</property>
 ```
 
 ## Per-ResourceManager Properties
@@ -462,7 +475,46 @@ Same thing, except **HTTPS**.
   <value>rm1:8090</value>
 </property>
 ```
-[^1]: The ResourceManager State Store is not a separate service. It's an abstraction (interface) that Hadoop uses to save and recover the ResourceManager's state. We need to set "yarn.resourcemanager.recovery.enabled" property value true to enable State Store.Common choices include:
+## Other Yarn Configurations
+
+There are actually four different groups here:
+
+- YARN SharedCache
+- NodeManager configuration
+- Log aggregation
+- Web UI
+
+The idea is to avoid repeatedly transferring the same application files to nodes.
+
+### YARN SharedCache
+
+This enables the YARN SharedCache. The idea is to avoid repeatedly transferring the same application files to nodes.
+
+Imagine 100 jobs all use ```my-big-library.jar```
+
+Without SharedCache:
+```
+Job 1 → upload JAR → NodeManager
+Job 2 → upload JAR → NodeManager
+Job 3 → upload JAR → NodeManager
+...
+```
+With SharedCache:
+
+
+
+                                         SharedCache
+                                             |
+                                      my-big-library.jar
+                                             |
+                                   +---------+---------+
+                                   |         |         |
+                                  NM1       NM2       NM3
+
+The first application puts the resource into the cache ant the other applications can reuse it.
+
+
+[^1]:The ResourceManager State Store is not a separate service. It's an abstraction (interface) that Hadoop uses to save and recover the ResourceManager's state. We need to set "yarn.resourcemanager.recovery.enabled" property value true to enable State Store.Common choices include:
     - ZooKeeper-based state store
     - Filesystem state store
     - LevelDB state store
