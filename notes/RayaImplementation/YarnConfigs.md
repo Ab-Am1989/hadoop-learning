@@ -389,7 +389,7 @@ Remember the lifecycle:
   ApplicationMaster starts
 ```
 
-For example if ApplicationMaster needs 10 more containers, Those requests go to the Scheduler RPC server. Internally this endpoint implements **ApplicationMasterProtocol** (?).
+For example if ApplicationMaster needs 10 more containers, Those requests go to the Scheduler RPC server. Internally this endpoint implements **ApplicationMasterProtocol**.
 
 Keeping RPC and Scheduler separate simplifies authorization, scalability, and the protocol design.
 
@@ -503,18 +503,61 @@ With SharedCache:
 
 
 
-                                         SharedCache
-                                             |
-                                      my-big-library.jar
-                                             |
-                                   +---------+---------+
-                                   |         |         |
-                                  NM1       NM2       NM3
+                                        SharedCache
+                                            |
+                                     my-big-library.jar
+                                            |
+                                  +---------+---------+
+                                  |         |         |
+                                 NM1       NM2       NM3
 
-The first application puts the resource into the cache ant the other applications can reuse it.
+#### Overview
 
+The YARN Shared Cache provides the facility to upload and manage shared application resources **to HDFS** in a safe and scalable manner.
+
+YARN applications can leverage resources uploaded by other applications or previous runs of the same application **without having to re­upload and localize identical files multiple times.** This will save network resources and reduce YARN application startup time.
+
+#### Architecture
+
+The shared cache feature consists of 4 major components:
+
+  1.  The shared cache client.
+  2.  The HDFS directory that acts as a cache.
+  3. The shared cache manager (aka. SCM).
+  4. The localization service and uploader.
+
+##### The Shared Cache Client
+
+YARN application developers and users, should interact with the shared cache using the shared cache client. This client is responsible for **interacting with the shared cache manager**, **computing the checksum of application resources**, and **claiming application resources in the shared cache**.
+
+###### Calculate a checksum for the resource
+  A resource is identified by its checksum, rather than by its original filename or path.
+  Hadoop's SharedCacheClient provides getFileChecksum() specifically for this purpose.
+
+###### interacting with the shared cache manager
+  The client sends the checksum, together with the application's ApplicationId[^2], to the SharedCacheManager.
+
+  Conceptually:
+
+  ```
+  Application
+       |
+       | SharedCacheClient.use(appId, checksum)
+       v
+  SharedCacheManager
+       |
+       | Is this resource in the Shared Cache?
+       |
+       +---- No ----> null
+       |
+       +---- Yes ---> URL/path of cached resource
+  ```
+
+  The use() operation is therefore a lookup and claim operation. If the resource exists, the SharedCacheManager returns a URL identifying the resource in the shared cache. If it does not exist, the result is empty (null).
 
 [^1]:The ResourceManager State Store is not a separate service. It's an abstraction (interface) that Hadoop uses to save and recover the ResourceManager's state. We need to set "yarn.resourcemanager.recovery.enabled" property value true to enable State Store.Common choices include:
     - ZooKeeper-based state store
     - Filesystem state store
     - LevelDB state store
+
+[^2]:A unique identifier that YARN assigns to each submitted application.
