@@ -511,11 +511,14 @@ With SharedCache:
                                   |         |         |
                                  NM1       NM2       NM3
 
+
 #### Overview
 
 The YARN Shared Cache provides the facility to upload and manage shared application resources **to HDFS** in a safe and scalable manner.
 
 YARN applications can leverage resources uploaded by other applications or previous runs of the same application **without having to re­upload and localize identical files multiple times.** This will save network resources and reduce YARN application startup time.
+
+You may think what is the nesseccessity of the HDFS? Resources could be store in and transfered through ApplicationMaster or even ResourceManger directly to the  NodeManagers. I asked this in the chat bot in this link.
 
 #### Architecture
 
@@ -633,12 +636,123 @@ The important distinction is:
 /sharedcache/a/6/7/a678cb1aa8f/job.jar
 ```
 
+You may wonder why HDFS is necessary in this case. The resources could be stored in the ApplicationMaster or even the ResourceManager and transferred directly to the NodeManagers. I raised this question in the [chatbot link](https://https://chatgpt.com/s/t_6ab5463de9388191b669b5761b19e8fd).
+
 ##### Shared Cache Manager (SCM)
 The shared cache manager is responsible for **serving requests from the client and managing the contents of the shared cache**. It looks after both the meta data as well as the persisted resources in HDFS. It is made up of two major components, a **back end store and a cleaner service**. The SCM runs as a separate daemon process that **can be placed on any node in the cluster**. This allows for administrators to start/stop/upgrade the SCM without affecting other YARN components (i.e. the resource manager or node managers).
 
 The **back end store** is responsible for **maintaining and persisting metadata about the shared cache**. This includes **the resources in the cache**, **when a resource was last used** and **a list of applications that are currently using the resource**. The implementation for the backing store is **pluggable** and **it currently uses an in-memory store that recreates its state after a restart**.
 
 The cleaner service maintains the persisted resources in HDFS by ensuring that resources that are no longer used are removed from the cache. It scans the resources in the cache periodically and **evicts resources if they are both stale and there are no live applications currently using the application.**
+
+YARN application developers and users, should interact with the shared cache using the shared cache client. This client is responsible for **interacting with the shared cache manager**, **computing the checksum of application resources**, and **claiming application resources in the shared cache**.
+
+```
+                         YARN cluster
+
+     +------------------+       +----------------------+
+     | ResourceManager  |       | SharedCacheManager   |
+     |                  |       |                      |
+     | scheduling       |       | metadata             |
+     | applications     |       | client requests      |
+     +------------------+       | cleanup              |
+                                +----------+-----------+
+                                           |
+                                           |
+                                    HDFS SharedCache
+                                           |
+                              +------------+------------+
+                              |            |            |
+                             DN1          DN2          DN3
+```
+Notice the SCM isn't transporting the Resource bytes, **The actual bytes come from HDFS**.
+
+###### SCM backend store
+
+The backend store is not the HDFS cache itself. Instead, it stores metadata about those resources, as mentioned above.
+
+| checksum  | resource | last-used | applications   | HDFS location |
+| --------- | -------- | --------- | -------------- | ------------- |
+| abc123... | C.jar    | 10:32     | App_01, App_17 |/sharedcache/a/8/9/a896857.../C.jar |
+| def456... | D.jar    | 09:15     | App_08         |/sharedcache/5/0/f/50f11b.../D.jar |
+
+The active metadata database is held in RAM rather than being continuously persisted to a conventional external database. Since the actual resources remain in HDFS, if the SCM crashes or restarts, Hadoop can rebuild the metadata store by examining the existing SharedCache resources in HDFS. [The Hadoop API documentation for InMemorySCMStore explicitly describes this bootstrap behavior.](https://hadoop.apache.org/docs/r3.1.0/hadoop-yarn/hadoop-yarn-server/hadoop-yarn-server-sharedcachemanager/apidocs/org/apache/hadoop/yarn/server/sharedcachemanager/store/InMemorySCMStore.html?utm_source=chatgpt.com)
+
+###### Cleaner Service
+
+The cleaner periodically examines cached resources therefore prevents the HDFS SharedCache from growing forever.
+
+```
+                            Resource
+                                |
+                      +---------+---------+
+                      |                   |
+                   stale?             currently used?
+                      |                   |
+                      |                   |
+                     YES                  NO
+                      |                   |
+                      +---------+---------+
+                                |
+                                v
+                             EVICT
+                                |
+                                v
+                      delete from HDFS
+```
+SCM can have an **AppChecker** component that determines whether an application is still running. Hadoop provides a ```RemoteAppChecker``` implementation that queries the ResourceManager remotely
+[The Hadoop API documents AppChecker specifically as the mechanism the cleaner uses to determine whether an application is running.
+](https://hadoop.apache.org/docs/r3.1.0/hadoop-yarn/hadoop-yarn-server/hadoop-yarn-server-sharedcachemanager/apidocs/org/apache/hadoop/yarn/server/sharedcachemanager/package-summary.html)
+
+##### The Shared Cache uploader and localization
+The shared cache uploader **is a service that runs on the node manager** and **adds resources to the shared cache**. It is responsible for **verifying a resources checksum**, **uploading the resource to HDFS** and **notifying the shared cache manager that a resource has been added to the cache**. It is important to note that the uploader service is asynchronous from the container launch and does not block the startup of a yarn application. In addition adding things to the cache is done in a best effort way and does not impact running applications. Once the uploader has placed a resource in the shared cache, **YARN uses the normal node manager localization mechanism to make resources available to the application**.
+
+```
+                         +----------------------+
+                         | SharedCacheManager   |
+                         |                      |
+                         |  Client protocol     |
+                         |  Admin protocol      |
+                         |                      |
+                         | +------------------+ |
+                         | | Backend Store    | |
+                         | | metadata         | |
+                         | +------------------+ |
+                         |          |           |
+                         |          v           |
+                         | +------------------+ |
+                         | | Cleaner Service  | |
+                         | +------------------+ |
+                         +----------+-----------+
+                                    |
+                         metadata / coordination
+                                    |
+                                    v
+                         +----------------------+
+                         |   HDFS SharedCache   |
+                         |                      |
+                         |  C.jar               |
+                         |  D.jar               |
+                         |  X.zip               |
+                         +----------+-----------+
+                                    |
+                              localization
+                                    |
+               +--------------------+--------------------+
+               |                    |                    |
+              NM1                  NM2                  NM3
+               |                    |                    |
+           local copy            local copy            local copy
+               |                    |                    |
+           Container            Container            Container
+```
+
+The YARN Shared Cache provides the facility to upload and manage shared application resources **to HDFS** in a safe and scalable manner.
+
+YARN applications can leverage resources uploaded by other applications or previous runs of the same application **without having to re­upload and localize identical files multiple times.** This will save network resources and reduce YARN application startup time.
+
+
+
 
 [^1]:The ResourceManager State Store is not a separate service. It's an abstraction (interface) that Hadoop uses to save and recover the ResourceManager's state. We need to set "yarn.resourcemanager.recovery.enabled" property value true to enable State Store.Common choices include:
     - ZooKeeper-based state store
