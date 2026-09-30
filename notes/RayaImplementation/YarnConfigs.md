@@ -484,8 +484,6 @@ There are actually four different groups here:
 - Log aggregation
 - Web UI
 
-The idea is to avoid repeatedly transferring the same application files to nodes.
-
 ### YARN SharedCache
 
 This enables the YARN SharedCache. The idea is to avoid repeatedly transferring the same application files to nodes.
@@ -517,8 +515,6 @@ With SharedCache:
 The YARN Shared Cache provides the facility to upload and manage shared application resources **to HDFS** in a safe and scalable manner.
 
 YARN applications can leverage resources uploaded by other applications or previous runs of the same application **without having to re­upload and localize identical files multiple times.** This will save network resources and reduce YARN application startup time.
-
-You may think what is the nesseccessity of the HDFS? Resources could be store in and transfered through ApplicationMaster or even ResourceManger directly to the  NodeManagers. I asked this in the chat bot in this link.
 
 #### Architecture
 
@@ -556,7 +552,6 @@ YARN application developers and users, should interact with the shared cache usi
        +---- Yes ---> URL/path of cached resource
   ```
 ###### Claim the resource for the application
-The word "claim" is important.
 
 Claiming a resource does not mean that the client downloads the file or physically copies it to the application container.
 
@@ -637,6 +632,15 @@ The important distinction is:
 ```
 
 You may wonder why HDFS is necessary in this case. The resources could be stored in the ApplicationMaster or even the ResourceManager and transferred directly to the NodeManagers. I raised this question in the [chatbot link](https://https://chatgpt.com/s/t_6ab5463de9388191b669b5761b19e8fd).
+
+###### Related YARN Configuration
+
+```XML
+<property>
+  <name>yarn.sharedcache.root-dir</name>
+  <value>${hadoop.tmp.dir}/sharedcache</value>
+</property>
+```
 
 ##### Shared Cache Manager (SCM)
 The shared cache manager is responsible for **serving requests from the client and managing the contents of the shared cache**. It looks after both the meta data as well as the persisted resources in HDFS. It is made up of two major components, a **back end store and a cleaner service**. The SCM runs as a separate daemon process that **can be placed on any node in the cluster**. This allows for administrators to start/stop/upgrade the SCM without affecting other YARN components (i.e. the resource manager or node managers).
@@ -751,6 +755,72 @@ The YARN Shared Cache provides the facility to upload and manage shared applicat
 
 YARN applications can leverage resources uploaded by other applications or previous runs of the same application **without having to re­upload and localize identical files multiple times.** This will save network resources and reduce YARN application startup time.
 
+###### Related YARN Configuration
+
+```XML
+<property>
+  <name>yarn.sharedcache.uploader.server.address</name>
+  <value>{{ hadoop_yarn_resourcemanagers | first }}:8046</value>
+</property>
+```
+### NodeManager configuration
+
+#### NodeManager Localizer
+
+The NodeManager Localizer is responsible for obtaining and localizing resources needed by containers.
+
+```
+<property>
+  <name>yarn.nodemanager.localizer.address</name>
+  <value>${yarn.nodemanager.hostname}:{{ hadoop_yarn_nodemanager_localizer_port }}</value>
+</property>
+```
+
+For example, an application might need:
+
+```
+myapp.jar
+configuration.xml
+library.jar
+```
+
+These resources need to be placed into the appropriate local directories before the container starts.
+
+#### NodeManager Collector Service
+
+It provides a service on the NodeManager for collecting information from running applications/containers.
+
+This is related to YARN application's timeline/metrics collection, specifically the NodeManager collector service.
+
+```XML
+<property>
+  <name>yarn.nodemanager.collector-service.address</name>
+  <value>${yarn.nodemanager.hostname}:{{ hadoop_yarn_nodemanager_collector_service_port }}</value>
+</property>
+```
+
+#### NodeManager Environment Whitelist
+
+It controls which environment variables from the NodeManager's environment can be passed into containers.
+
+```XML
+<property>
+  <name>yarn.nodemanager.env-whitelist</name>
+  <value>
+    JAVA_HOME,
+    HADOOP_COMMON_HOME,
+    HADOOP_HDFS_HOME,
+    HADOOP_CONF_DIR,
+    CLASSPATH_PREPEND_DISTCACHE,
+    HADOOP_YARN_HOME,
+    HADOOP_HOME,
+    PATH,
+    LANG,
+    TZ,
+    HADOOP_MAPRED_HOME
+  </value>
+</property>
+```
 
 
 
